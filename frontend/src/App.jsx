@@ -1,34 +1,45 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useState } from "react";
+import { Routes, Route } from "react-router-dom";
+import Home from "./pages/Home";
+import Product from "./pages/Catalogo";
+import Cart from "./pages/CarritoCompra";
+import DetalleProduct from "./pages/DetalleProducto";
+import SignupUp from "./pages/SignupEndUser";
+import Login from "./pages/LoginEndUser";
+import Dashboard from "./pages/Dashboard";
+import DashboardProductos from "./pages/DashboardProductos";
+import DashboardUsuarios from "./pages/DashboardUsuario";
+import DashboardTags from "./pages/DashboardTags";
+import NavBar from "./components/NavBar";
+import Footer from "./components/Footer";
+import Sponsors from "./components/Sponsors";
+
+
 import './App.css'
 
 function App() {
   const [count, setCount] = useState(0)
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+  <Router>
+      <NavBar/>
+
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/Products" element={<Product />} />
+        <Route path="/Carrito" element={<Cart />} />
+        <Route path="/DetalleProduct" element={<DetalleProduct />} />
+        <Route path="/signup" element={<SignupUp />} />
+        <Route path="/Login" element={<Login />} />
+        <Route path="/Dashboard" element={<Dashboard />} />
+        <Route path="/Dashboard/productos" element={<DashboardProductos />} />
+        <Route path="/Dashboard/usuarios" element={<DashboardUsuarios />} />
+        <Route path="/Dashboard/tags" element={<DashboardTags />} />
+      </Routes>
+
+      <Sponsors />
+      <Footer />
+    </Router> 
   )
 }
 

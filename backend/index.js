@@ -2,63 +2,69 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
-
 const { Sequelize, DataTypes } = require("sequelize");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 // Conexión a PostgreSQL
 const sequelize = new Sequelize(process.env.PG_URI, {
   dialect: "postgres",
-  logging: false
+  logging: false,
 });
 
-// Verificar conexión
 sequelize.authenticate()
   .then(() => console.log("Conexión exitosa a PostgreSQL"))
-  .catch(err => console.error("Error al conectar a PostgreSQL:", err));
+  .catch((err) => console.error("Error al conectar a PostgreSQL:", err));
 
-const app = express();
-app.use(express.json());
-app.use(cors());
+/**
+ * MODELOS
+ */
 
-/* ===========================
-   MODELOS
-=========================== */
-
-// Usuario
 const Usuario = sequelize.define("Usuario", {
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
   password: { type: DataTypes.STRING, allowNull: false },
-  isAdmin: { type: DataTypes.BOOLEAN, defaultValue: false }
+  isAdmin: { type: DataTypes.BOOLEAN, defaultValue: false },
 });
 
-// Producto
 const Producto = sequelize.define("Producto", {
   name: { type: DataTypes.STRING, allowNull: false },
   price: { type: DataTypes.FLOAT, allowNull: false },
-  description: DataTypes.TEXT,
-  image: DataTypes.STRING,
-  stock: { type: DataTypes.INTEGER, defaultValue: 0 }
+  description: { type: DataTypes.TEXT },
+  image: { type: DataTypes.STRING },
+  stock: { type: DataTypes.INTEGER, defaultValue: 0 },
+  categoriaId: { type: DataTypes.INTEGER },
 });
 
-// Sincronizar modelos con la base de datos
-sequelize.sync({ alter: true }) // Cambiar a { force: true } si deseas reiniciar las tablas
-  .then(() => console.log("Modelos sincronizados"))
-  .catch(err => console.error("Error al sincronizar modelos:", err));
+const Categoria = sequelize.define("Categoria", {
+  name: { type: DataTypes.STRING, allowNull: false, unique: true },
+});
 
-/* ===========================
-   RUTAS
-=========================== */
+const Carrito = sequelize.define("Carrito", {
+  usuarioId: { type: DataTypes.INTEGER, allowNull: false },
+  productoId: { type: DataTypes.INTEGER, allowNull: false },
+  cantidad: { type: DataTypes.INTEGER, defaultValue: 1 },
+});
 
-// Registro
+// Relaciones
+Categoria.hasMany(Producto, { foreignKey: "categoriaId" });
+Producto.belongsTo(Categoria, { foreignKey: "categoriaId" });
+
+sequelize.sync({ alter: true })
+  .then(() => console.log("Modelos sincronizados con la base de datos"))
+  .catch((err) => console.error("Error al sincronizar modelos:", err));
+
+/**
+ * AUTENTICACIÓN
+ */
+
 app.post("/registro", async (req, res) => {
   try {
     const { name, email, password } = req.body;
     const usuarioExistente = await Usuario.findOne({ where: { email } });
-
-    if (usuarioExistente) {
-      return res.status(400).json({ message: "El correo ya está registrado" });
-    }
+    if (usuarioExistente) return res.status(400).json({ message: "Correo ya registrado" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const totalUsuarios = await Usuario.count();
@@ -67,45 +73,66 @@ app.post("/registro", async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      isAdmin: totalUsuarios === 0
+      isAdmin: totalUsuarios === 0,
     });
 
-    res.status(201).json({ usuario: nuevoUsuario });
+    res.status(201).json(nuevoUsuario);
   } catch (error) {
-    res.status(500).json({ message: "Error en el registro", error });
+    res.status(500).json({ message: "Error en el registro" });
   }
 });
 
-// Login
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const usuario = await Usuario.findOne({ where: { email } });
-
     if (!usuario || !(await bcrypt.compare(password, usuario.password))) {
       return res.status(400).json({ message: "Credenciales inválidas" });
     }
-
-    res.json({ usuario });
+    res.json(usuario);
   } catch (error) {
-    res.status(500).json({ message: "Error en el login", error });
+    res.status(500).json({ message: "Error en el login" });
   }
 });
 
-// Obtener productos (Dashboard)
-app.get("/dashboard", async (req, res) => {
-  try {
-    const productos = await Producto.findAll();
-    res.json(productos);
-  } catch (error) {
-    res.status(500).json({ message: "Error al obtener productos" });
-  }
+/**
+ * CRUD USUARIOS (ADMIN)
+ */
+
+app.get("/usuarios", async (req, res) => {
+  const usuarios = await Usuario.findAll();
+  res.json(usuarios);
 });
 
-// CRUD de productos
+app.get("/usuarios/:id", async (req, res) => {
+  const usuario = await Usuario.findByPk(req.params.id);
+  res.json(usuario);
+});
+
+app.put("/usuarios/:id", async (req, res) => {
+  const { name, email } = req.body;
+  await Usuario.update({ name, email }, { where: { id: req.params.id } });
+  const actualizado = await Usuario.findByPk(req.params.id);
+  res.json(actualizado);
+});
+
+app.delete("/usuarios/:id", async (req, res) => {
+  await Usuario.destroy({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+/**
+ * CRUD PRODUCTOS
+ */
+
 app.get("/productos", async (req, res) => {
-  const productos = await Producto.findAll();
+  const productos = await Producto.findAll({ include: Categoria });
   res.json(productos);
+});
+
+app.get("/productos/:id", async (req, res) => {
+  const producto = await Producto.findByPk(req.params.id);
+  res.json(producto);
 });
 
 app.post("/productos", async (req, res) => {
@@ -114,9 +141,9 @@ app.post("/productos", async (req, res) => {
 });
 
 app.put("/productos/:id", async (req, res) => {
-  const id = req.params.id;
-  const actualizado = await Producto.update(req.body, { where: { id }, returning: true });
-  res.json(actualizado[1][0]);
+  await Producto.update(req.body, { where: { id: req.params.id } });
+  const actualizado = await Producto.findByPk(req.params.id);
+  res.json(actualizado);
 });
 
 app.delete("/productos/:id", async (req, res) => {
@@ -124,8 +151,76 @@ app.delete("/productos/:id", async (req, res) => {
   res.status(204).send();
 });
 
-// Puerto
+/**
+ * CRUD CATEGORÍAS
+ */
+
+app.get("/categorias", async (req, res) => {
+  const categorias = await Categoria.findAll();
+  res.json(categorias);
+});
+
+app.get("/categorias/:id", async (req, res) => {
+  const productos = await Producto.findAll({ where: { categoriaId: req.params.id } });
+  res.json(productos);
+});
+
+app.post("/categorias", async (req, res) => {
+  const nueva = await Categoria.create(req.body);
+  res.status(201).json(nueva);
+});
+
+app.put("/categorias/:id", async (req, res) => {
+  await Categoria.update(req.body, { where: { id: req.params.id } });
+  const actualizada = await Categoria.findByPk(req.params.id);
+  res.json(actualizada);
+});
+
+app.delete("/categorias/:id", async (req, res) => {
+  await Categoria.destroy({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
+/**
+ * CARRITO DE COMPRA
+ */
+
+app.get("/carrito/:usuarioId", async (req, res) => {
+  const carrito = await Carrito.findAll({ where: { usuarioId: req.params.usuarioId }, include: Producto });
+  res.json(carrito);
+});
+
+app.post("/carrito/:usuarioId", async (req, res) => {
+  const { productoId, cantidad } = req.body;
+  const item = await Carrito.create({ usuarioId: req.params.usuarioId, productoId, cantidad });
+  res.status(201).json(item);
+});
+
+app.put("/carrito/:usuarioId", async (req, res) => {
+  const { productoId, cantidad } = req.body;
+  await Carrito.update(
+    { cantidad },
+    { where: { usuarioId: req.params.usuarioId, productoId } }
+  );
+  const actualizado = await Carrito.findOne({ where: { usuarioId: req.params.usuarioId, productoId } });
+  res.json(actualizado);
+});
+
+app.delete("/carrito/:usuarioId/:prodId", async (req, res) => {
+  await Carrito.destroy({ where: { usuarioId: req.params.usuarioId, productoId: req.params.prodId } });
+  res.status(204).send();
+});
+
+app.delete("/carrito/:usuarioId", async (req, res) => {
+  await Carrito.destroy({ where: { usuarioId: req.params.usuarioId } });
+  res.status(204).send();
+});
+
+/**
+ * INICIAR SERVIDOR
+ */
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-console.log(`Servidor funcionando en el puerto ${PORT}`);
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
